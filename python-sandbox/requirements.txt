@@ -1,0 +1,12 @@
+numpy              # Numerical computations
+scipy              # Scientific computing (integrals, differential equations, etc.)
+sympy              # Symbolic mathematics (including physics modules)
+matplotlib         # Plotting and visualizing data
+pandas             # Data handling and manipulation
+statsmodels        # Statistical analysis
+scikit-learn       # Machine learning tools and statistics
+mpmath             # Arbitrary-precision arithmetic
+networkx           # Graph theory
+quantities         # Support for physical quantities with units
+pint               # Unit conversions and physical quantities
+pyquaternion       # Quaternion math, useful for rotational physics
