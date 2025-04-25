@@ -3,6 +3,7 @@ from typing import Any, Optional
 
 from dotenv import load_dotenv
 from google.adk.agents import Agent
+from google.adk.models.lite_llm import LiteLlm
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.adk.tools.mcp_tool.mcp_toolset import (MCPToolset,
@@ -10,8 +11,6 @@ from google.adk.tools.mcp_tool.mcp_toolset import (MCPToolset,
 from google.genai import types
 
 load_dotenv("src/.env")
-print("ok")
-from google.adk.models.lite_llm import LiteLlm
 
 INSTRUCTION = """You are a math agent.
 When given any mathematical expression, generate a Python code snippet that evaluates the expression and assigns the result to a variable named 'result'.
@@ -46,7 +45,6 @@ class MCPClient:
 
     async def get_agent(self):
         """Main proccess"""
-        print("Gettt")
         root_agent = Agent(
             name="math_agent",
             model=LiteLlm(model="azure/gpt-4o-mini"),
@@ -68,9 +66,8 @@ async def main():
     path = "src/server.py"
     try:
         if os.path.exists(path=path):
-            print("Init...")
+            print("Start")
             await client.connect_to_server(path)
-            print("Init success")
             session_service = InMemorySessionService()
 
             session = session_service.create_session(
