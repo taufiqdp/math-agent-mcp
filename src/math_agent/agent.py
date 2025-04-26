@@ -1,108 +1,86 @@
-import os
-from typing import Any, Optional
-
 from dotenv import load_dotenv
 from google.adk.agents import Agent
-from google.adk.models.lite_llm import LiteLlm
 from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.adk.tools.mcp_tool.mcp_toolset import (MCPToolset,
                                                    StdioServerParameters)
 from google.genai import types
 
+from .utils import print_event
+
 load_dotenv("src/.env")
 
-INSTRUCTION = """You are a math agent.
-When given any mathematical expression, generate a Python code snippet that evaluates the expression and assigns the result to a variable named 'result'.
-Always end your code with 'print(result)' to display the output.
-Use the 'code_execution_tool' to execute the code and print the result.
-If code execution fails, return a clear error message along with a helpful suggestion for debugging."""
+
+async def get_tools():
+    """Gets tools from the File System MCP Server."""
+    print("Connecting to MCP server...")
+    server_params = StdioServerParameters(
+        command="deno",
+        args=[
+            "run",
+            "-N",
+            "-R=node_modules",
+            "-W=node_modules",
+            "--node-modules-dir=auto",
+            "jsr:@pydantic/mcp-run-python",
+            "stdio",
+        ],
+    )
+
+    tools, exit_stack = await MCPToolset.from_server(connection_params=server_params)
+    print("Connected to MCP server.")
+    return tools, exit_stack
 
 
-class MCPClient:
-    def __init__(self):
-        self.exit_stack: Optional[Any] = None
-        self.server_params: Optional[Any] = None
-        self.tools: Optional[Any] = None
+async def get_agent():
+    """Creates the root agent."""
+    tools, exit_stack = await get_tools()
+    for tool in tools:
+        print(f"Tool: {tool.name}\nSchema: {tool.mcp_tool.inputSchema}")
 
-    async def connect_to_server(self, path: str):
-        """Connect to the mcp server
+    root_agent = Agent(
+        model="gemini-2.0-flash",
+        name="MathAgent",
+        tools=tools,
+        instruction="Answer math questions using the tools provided.",
+    )
 
-        Args:
-            path: Path to the server script.
-        """
-        self.server_params = StdioServerParameters(command="python", args=[path])
-
-        print("Connected to the mcp server")
-
-    async def get_mcp_tools(self):
-        """Get tools from the mcp server"""
-        self.tools, self.exit_stack = await MCPToolset.from_server(
-            connection_params=self.server_params
-        )
-
-        print(f"Fetched {len(self.tools)} tools from MCP server.")
-
-    async def get_agent(self):
-        """Main proccess"""
-        root_agent = Agent(
-            name="math_agent",
-            model=LiteLlm(model="azure/gpt-4o-mini"),
-            tools=self.tools,
-            instruction=INSTRUCTION,
-            description="Agent to answer questions about mathematics.",
-        )
-
-        return root_agent
-
-    async def cleanup(self):
-        """Clean up resources."""
-        await self.exit_stack.aclose()
+    return root_agent, exit_stack
 
 
 async def main():
-    print("Start")
-    client = MCPClient()
-    path = "src/server.py"
     try:
-        if os.path.exists(path=path):
-            print("Start")
-            await client.connect_to_server(path)
-            session_service = InMemorySessionService()
+        session_service = InMemorySessionService()
+        root_agent, exit_stack = await get_agent()
 
-            session = session_service.create_session(
-                state={}, app_name="math_agent", user_id="user_1"
-            )
+        sesseion = session_service.create_session(
+            state={},
+            app_name="MathAgent",
+            user_id="user",
+        )
 
-            query = """Evaluate: ∫ 3ax/(b2 +c2x2) dx"""
-            print(f"User Query: '{query}'")
-            content = types.Content(role="user", parts=[types.Part(text=query)])
+        question = "How many days between 1st January 2023 and 1st June 2024?"
+        content = types.Content(role="user", parts=[types.Part(text=question)])
 
-            await client.get_mcp_tools()
-            root_agent = await client.get_agent()
+        runner = Runner(
+            app_name="MathAgent", agent=root_agent, session_service=session_service
+        )
 
-            runner = Runner(
-                app_name="math_agent",
-                agent=root_agent,
-                session_service=session_service,
-            )
-            print("Running agent...")
-            events_async = runner.run_async(
-                session_id=session.id, user_id=session.user_id, new_message=content
-            )
+        print("Running agent...")
+        events_async = runner.run_async(
+            session_id=sesseion.id,
+            user_id=sesseion.user_id,
+            new_message=content,
+        )
 
-            async for event in events_async:
-                print(f"Event received: {event.content.parts[0].text}")
+        async for event in events_async:
+            await print_event(event)
 
-        else:
-            print("Path not found!")
     finally:
-        print("Shut down")
-        await client.cleanup()
+        await exit_stack.aclose()
 
 
 if __name__ == "__main__":
     import asyncio
-    import json
 
     asyncio.run(main())
